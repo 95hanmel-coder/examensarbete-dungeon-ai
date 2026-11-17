@@ -77,7 +77,7 @@
 
             // Drakgrottan
             dragonCave.Exits.Add("norr", chapel);
-            dragonCave.Exits.Add("väst", throneRoom); // genväg från drakgrottan till tronsalen
+            dragonCave.Exits.Add("väst", throneRoom); // genväg mellan drakgrottan och tronsalen, åt båda hållen
 
             // Lancelots kammare
             lancelotsChamber.Exits.Add("öst", roundTableHall);
@@ -86,6 +86,7 @@
 
             // Tronsalen
             throneRoom.Exits.Add("öst", lancelotsChamber);
+            throneRoom.Exits.Add("syd", dragonCave); // tillbaka genom genvägen
 
             // Kungliga kammaren
             royalChamber.Exits.Add("syd", lancelotsChamber);
