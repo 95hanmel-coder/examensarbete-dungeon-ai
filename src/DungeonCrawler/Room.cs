@@ -22,12 +22,13 @@ namespace DungeonCrawler_Spel
             Exits = new Dictionary<string, Room>();
         }
 
-        public string GetDescription()
+        // aiDescription = text från AI-spelledaren. Saknas den används rummets fasta beskrivning.
+        public string GetDescription(string? aiDescription = null)
         {
             // AI. Effektivt för att bygga strängar i loopar. Istället för result +=
             StringBuilder sb = new StringBuilder();
             // Lägg till information om föremål i rummet.
-            sb.AppendLine(Description);
+            sb.AppendLine(aiDescription ?? Description);
 
             // Om det finns föremål...
             if (ItemsInRoom.Count > 0)

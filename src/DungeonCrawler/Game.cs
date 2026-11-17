@@ -5,6 +5,7 @@
         private Player player;
         private bool gameOver = false;
         private Dictionary<string, Room> allRooms;
+        private AiGameMaster gameMaster = new AiGameMaster();
         private const string WINNING_ITEM_NAME = "Heliga Graalen";
         private const string WINNING_ROOM_NAME = "Kapellet";
 
@@ -23,7 +24,7 @@
 
 
             Console.WriteLine($"Du befinner dig i {player.CurrentRoom.Name}.");
-            Console.WriteLine(player.CurrentRoom.GetDescription());
+            DescribeCurrentRoom();
 
             while (!gameOver)
             {
@@ -166,7 +167,15 @@
 
             player.MoveToRoom(nextRoom);
             Console.WriteLine($"Du går {direction} och kommer till {player.CurrentRoom.Name}.");
-            Console.WriteLine(player.CurrentRoom.GetDescription());
+            DescribeCurrentRoom();
+        }
+
+        // Ber AI-spelledaren beskriva rummet. Svarar den inte visas den fasta texten.
+        private void DescribeCurrentRoom()
+        {
+            Console.WriteLine("(Spelledaren funderar...)");
+            string? aiText = gameMaster.DescribeRoom(player.CurrentRoom);
+            Console.WriteLine(player.CurrentRoom.GetDescription(aiText));
         }
 
 
