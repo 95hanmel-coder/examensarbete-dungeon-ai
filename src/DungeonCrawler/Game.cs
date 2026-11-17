@@ -36,7 +36,11 @@
             }
 
             Console.WriteLine("Tack för att du spelade!");
-            Console.ReadKey();
+            // Vänta på tangent bara när någon spelar på riktigt (inte i tester eller Docker utan tangentbord)
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey();
+            }
         }
 
         private void CreateWorld()

@@ -1,0 +1,43 @@
+# Startar hela lösningen: AI-tjänsten (Ollama), nedladdning av modellen och spelet.
+# Spela: docker compose run --rm game
+
+services:
+  # AI-tjänsten. Svarar på HTTP på port 11434.
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama # Modellerna sparas här, så de bara laddas ner en gång
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Laddar ner AI-modellen och avslutas sedan. Går snabbt om modellen redan finns.
+  model:
+    image: ollama/ollama
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    command: ["pull", "${OLLAMA_MODEL:-llama3.2:3b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  # Spelet. Pratar med AI-tjänsten via nätverket som Docker skapar.
+  game:
+    build: ./src/DungeonCrawler
+    stdin_open: true # Spelet behöver kunna läsa det du skriver
+    tty: true
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+    depends_on:
+      model:
+        condition: service_completed_successfully
+
+volumes:
+  ollama:
+    name: ollama # Samma volym som tidigare, så redan nedladdade modeller används
