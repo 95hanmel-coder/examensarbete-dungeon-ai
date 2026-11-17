@@ -1,4 +1,6 @@
-﻿namespace DungeonCrawler_Spel
+﻿using System.Diagnostics;
+
+namespace DungeonCrawler_Spel
 {
     internal class Game
     {
@@ -120,6 +122,10 @@
                 "Du är Nimue, Sjöns Dam, som en gång gav kung Arthur svärdet Excalibur. " +
                 "Du är vänlig men hemlighetsfull och talar om speglar, vatten och öden. " +
                 "Du vet inte var Graalen finns, men du tycker att Tristan ska fråga Merlin."));
+            dragonCave.Characters.Add(new Character("Draken",
+                "Du är en uråldrig, trött drake som bor i grottan under Camelot. Du pratar långsamt och lite grinigt " +
+                "och vill mest sova. Du har tappat ett fjäll som du är fåfäng över. " +
+                "Du vet att Graalen inte finns i din grotta, men du vet inte var den är."));
 
 
             Item excalibur = new Item("Excalibur", "");
@@ -165,7 +171,7 @@
             switch (verb)
             {
                 case "gå": MovePlayer(noun); break;
-                case "titta": Console.WriteLine(player.CurrentRoom.GetDescription()); break;
+                case "titta": DescribeCurrentRoom(); break;
                 case "ta": TakeItemFromRoom(noun); break;
                 case "inventory": Console.WriteLine(player.GetInventoryDescription()); break;
                 case "prata": TalkTo(noun); break;
@@ -191,7 +197,7 @@
             }
             direction = normalized;
 
-            if (!player.CurrentRoom.Exits.TryGetValue(direction, out Room nextRoom))
+            if (!player.CurrentRoom.Exits.TryGetValue(direction, out Room? nextRoom))
             {
                 Console.WriteLine("Du försöker gå genom väggen. Tyvärr, Tristan är inte en spökfigur… än.");
                 return;
@@ -215,19 +221,24 @@
             }
         }
 
-        // Ber AI-spelledaren beskriva rummet. Svarar den inte visas den fasta texten.
+        // Ber AI-spelledaren beskriva rummet. Texten visas medan AI:n skriver. Svarar den inte visas den fasta texten.
         private void DescribeCurrentRoom()
         {
-            Console.WriteLine("(Spelledaren funderar...)");
-            string? aiText = gameMaster.DescribeRoom(player.CurrentRoom);
-            Console.WriteLine(player.CurrentRoom.GetDescription(aiText));
+            string? aiText = gameMaster.DescribeRoom(player.CurrentRoom, Console.Write);
+
+            if (aiText == null)
+            {
+                Console.Write(player.CurrentRoom.Description);
+            }
+            Console.WriteLine();
+            Console.WriteLine(player.CurrentRoom.GetDetails());
         }
 
 
         private void TakeItemFromRoom(string itemName)
         {
             // AI hjälp. Hitta objektet i rummets lista baserat på namn (case-insensitive) med lambda. Ist för foreach. 
-            Item itemToTake = player.CurrentRoom.ItemsInRoom.Find(item => item.Name.ToLower() == itemName.ToLower());
+            Item? itemToTake = player.CurrentRoom.ItemsInRoom.Find(item => item.Name.ToLower() == itemName.ToLower());
 
             // Räcker att skriva början av namnet, t.ex. "ta brev" för "Brev med sigill"
             if (itemToTake == null && itemName != "")
@@ -272,7 +283,8 @@
                 return;
             }
 
-            List<AiGameMaster.ChatMessage> conversation = gameMaster.StartConversation(character);
+            string inventory = player.Inventory.Count > 0 ? string.Join(", ", player.Inventory.Select(x => x.Name)) : "ingenting";
+            List<AiGameMaster.ChatMessage> conversation = gameMaster.StartConversation(character, inventory);
             Console.WriteLine($"Du pratar med {character.Name}. Skriv 'hejdå' för att sluta prata.\n");
 
             while (true)
@@ -281,15 +293,15 @@
                 string said = Console.ReadLine()?.Trim() ?? "hejdå"; // null = inmatningen tog slut
                 if (said.ToLower() == "hejdå" || said == "") break;
 
-                Console.WriteLine("(" + character.Name + " funderar...)");
-                string? answer = gameMaster.Talk(conversation, said);
+                Console.Write($"{character.Name}: ");
+                string? answer = gameMaster.Talk(conversation, said, Console.Write); // Svaret visas medan AI:n skriver
 
                 if (answer == null)
                 {
-                    Console.WriteLine($"{character.Name} ser fundersam ut men säger ingenting.");
+                    Console.WriteLine($"({character.Name} ser fundersam ut men säger ingenting.)");
                     break;
                 }
-                Console.WriteLine($"{character.Name}: {answer}\n");
+                Console.WriteLine("\n");
             }
 
             Console.WriteLine($"Du lämnar {character.Name} och ser dig omkring i rummet igen.");
@@ -305,6 +317,67 @@
             Console.WriteLine(" prata med [namn] - pratar med en figur i rummet");
             Console.WriteLine(" hjälp - visar denna lista");
             Console.WriteLine(" avsluta - avslutar spelet");
+        }
+
+        // Mätläge: dotnet run -- --benchmark [modell ...]
+        // Ber varje modell beskriva alla rum och svara Merlin en fråga, och mäter tiden. Skriver resultatet som Markdown.
+        public void RunBenchmark(string[] models)
+        {
+            if (models.Length == 0) models = new[] { new AiGameMaster().Model };
+
+            Console.WriteLine($"# Jämförelse av AI-modeller ({DateTime.Now:yyyy-MM-dd})\n");
+            Console.WriteLine("Samma instruktioner som i spelet. Tid till första ordet = hur länge spelaren väntar innan texten börjar synas.\n");
+
+            foreach (string model in models)
+            {
+                AiGameMaster ai = new AiGameMaster(model);
+                Console.WriteLine($"## {model}\n");
+
+                // Första anropet laddar in modellen i minnet och tar längre tid. Mäts för sig.
+                Measure(() => ai.DescribeRoom(allRooms["Kapellet"]), out double coldStart, out _);
+                if (coldStart < 0)
+                {
+                    Console.WriteLine("Modellen svarade inte. Är den nedladdad?\n");
+                    continue;
+                }
+                Console.WriteLine($"Kallstart (modellen laddas in i minnet): {coldStart:N1} s\n");
+
+                Console.WriteLine("| Rum | Första ordet | Totalt | Beskrivning |");
+                Console.WriteLine("|---|---|---|---|");
+                List<double> firstWords = new List<double>();
+                List<double> totals = new List<double>();
+
+                foreach (Room room in allRooms.Values)
+                {
+                    string? text = null;
+                    double first = -1;
+                    Stopwatch watch = Stopwatch.StartNew();
+                    text = ai.DescribeRoom(room, piece => { if (first < 0) first = watch.Elapsed.TotalSeconds; });
+                    double total = watch.Elapsed.TotalSeconds;
+
+                    firstWords.Add(first);
+                    totals.Add(total);
+                    Console.WriteLine($"| {room.Name} | {first:N1} s | {total:N1} s | {text?.Replace("\n", " ").Replace("|", "/")} |");
+                }
+
+                Console.WriteLine($"\n**Medel:** första ordet {firstWords.Average():N1} s, totalt {totals.Average():N1} s\n");
+
+                // Merlin
+                Character merlin = allRooms["Merlins Torn"].Characters[0];
+                List<AiGameMaster.ChatMessage> conversation = ai.StartConversation(merlin, "Fackla, Sköld");
+                Stopwatch merlinWatch = Stopwatch.StartNew();
+                string? answer = ai.Talk(conversation, "Var finns Heliga Graalen?");
+                Console.WriteLine($"**Merlin** ({merlinWatch.Elapsed.TotalSeconds:N1} s): \"Var finns Heliga Graalen?\"\n");
+                Console.WriteLine($"> {answer?.Replace("\n", " ")}\n");
+            }
+        }
+
+        // Mäter hur lång tid ett AI-anrop tar. seconds = -1 om AI:n inte svarade.
+        private static void Measure(Func<string?> call, out double seconds, out string? result)
+        {
+            Stopwatch watch = Stopwatch.StartNew();
+            result = call();
+            seconds = result == null ? -1 : watch.Elapsed.TotalSeconds;
         }
 
         private void CheckWinCondition()

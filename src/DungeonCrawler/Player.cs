@@ -4,7 +4,7 @@ namespace DungeonCrawler_Spel
 {
     internal class Player
     {
-        public Room CurrentRoom { get; set; }
+        public Room CurrentRoom { get; set; } = null!; // Sätts när spelet startar, i Game.Start()
 
         public List<Item> Inventory { get; set; }
 

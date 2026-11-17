@@ -23,13 +23,17 @@ namespace DungeonCrawler_Spel
             Exits = new Dictionary<string, Room>();
         }
 
-        // aiDescription = text från AI-spelledaren. Saknas den används rummets fasta beskrivning.
-        public string GetDescription(string? aiDescription = null)
+        // Fasta beskrivningen plus figurer, föremål och utgångar.
+        public string GetDescription()
+        {
+            return Description + Environment.NewLine + GetDetails();
+        }
+
+        // Figurer, föremål och utgångar. Bestäms alltid av koden, aldrig av AI:n.
+        public string GetDetails()
         {
             // AI. Effektivt för att bygga strängar i loopar. Istället för result +=
             StringBuilder sb = new StringBuilder();
-            // Lägg till information om föremål i rummet.
-            sb.AppendLine(aiDescription ?? Description);
 
             // Figurer man kan prata med
             if (Characters.Count > 0)

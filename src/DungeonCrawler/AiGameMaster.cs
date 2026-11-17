@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace DungeonCrawler_Spel
@@ -8,8 +9,9 @@ namespace DungeonCrawler_Spel
     internal class AiGameMaster
     {
         private readonly HttpClient http;
-        private readonly string model;
         private bool available = true; // Sätts till false om Ollama inte svarar, så vi slutar försöka
+
+        public string Model { get; }
 
         // Instruktion till AI:n för rumsbeskrivningar. Exemplet visar hur ett bra svar ser ut.
         private const string ROOM_INSTRUCTIONS =
@@ -26,21 +28,28 @@ namespace DungeonCrawler_Spel
             "Svar: Du kliver in i den lilla vaktstugan, där en brasa sprakar i hörnet. " +
             "På bordet ligger en kniv och glimmar i eldskenet.";
 
-        public AiGameMaster()
+        // Gäller alla figurer
+        private const string CHARACTER_RULES =
+            "Du pratar med riddaren Tristan, som letar efter Heliga Graalen. " +
+            "Svara alltid i rollen, på enkel och korrekt svenska, med högst tre meningar. " +
+            "Det heter Graalen, aldrig grål eller gral. Säg aldrig att du är en AI.";
+
+        public AiGameMaster(string? model = null)
         {
             // Adress och modell kan ändras med miljövariabler, annars används standardvärden.
             string url = Environment.GetEnvironmentVariable("OLLAMA_URL") ?? "http://localhost:11434";
-            model = Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "llama3.2:3b";
+            Model = model ?? Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "llama3.2:3b";
 
             http = new HttpClient
             {
                 BaseAddress = new Uri(url),
-                Timeout = TimeSpan.FromSeconds(30) // Tidsgräns, så spelet inte fastnar
+                Timeout = TimeSpan.FromSeconds(60) // Tidsgräns, så spelet inte fastnar
             };
         }
 
-        // Returnerar en AI-skriven beskrivning, eller null om AI:n inte går att nå (då används den fasta texten).
-        public string? DescribeRoom(Room room)
+        // Skriver en AI-beskrivning av rummet. onText får texten bit för bit, så den kan visas medan AI:n skriver.
+        // Returnerar hela texten, eller null om AI:n inte går att nå (då används den fasta texten).
+        public string? DescribeRoom(Room room, Action<string>? onText = null)
         {
             string items = room.ItemsInRoom.Count > 0
                 ? string.Join(", ", room.ItemsInRoom.Select(x => x.Name))
@@ -52,42 +61,26 @@ namespace DungeonCrawler_Spel
                 new ChatMessage("user", $"Rum: {room.Name}. Grundbeskrivning: {room.Description} Föremål: {items}")
             };
 
-            string? text = Ask(messages);
-            return text == null ? null : KeepSentences(text, 2);
-        }
-
-        // AI:n skriver ofta fler meningar än vi ber om, så vi klipper efter ett visst antal.
-        private static string KeepSentences(string text, int max)
-        {
-            int count = 0;
-            for (int i = 0; i < text.Length; i++)
-            {
-                if (text[i] == '.' || text[i] == '!' || text[i] == '?')
-                {
-                    count++;
-                    if (count == max) return text.Substring(0, i + 1);
-                }
-            }
-            return text;
+            // AI:n skriver ofta fler meningar än vi ber om, så vi slutar läsa efter två.
+            return Ask(messages, onText, maxSentences: 2);
         }
 
         // Startar ett samtal med en figur. Listan sparar allt som sagts, så figuren minns samtalet.
-        public List<ChatMessage> StartConversation(Character character)
+        public List<ChatMessage> StartConversation(Character character, string inventory)
         {
             string instructions =
                 character.Personality + "\n" +
-                "Du pratar med riddaren Tristan, som letar efter Heliga Graalen. " +
-                "Svara alltid i rollen, på enkel och korrekt svenska, med högst tre meningar. " +
-                "Säg aldrig att du är en AI.";
+                CHARACTER_RULES + "\n" +
+                $"Tristan bär på: {inventory}. Du får kommentera det om det passar.";
 
             return new List<ChatMessage> { new ChatMessage("system", instructions) };
         }
 
         // Skickar det spelaren säger och returnerar figurens svar, eller null om AI:n inte svarar.
-        public string? Talk(List<ChatMessage> conversation, string playerText)
+        public string? Talk(List<ChatMessage> conversation, string playerText, Action<string>? onText = null)
         {
             conversation.Add(new ChatMessage("user", playerText));
-            string? answer = Ask(conversation);
+            string? answer = Ask(conversation, onText, maxSentences: 4);
 
             if (answer != null)
             {
@@ -96,28 +89,77 @@ namespace DungeonCrawler_Spel
             return answer;
         }
 
-        private string? Ask(List<ChatMessage> messages)
+        private string? Ask(List<ChatMessage> messages, Action<string>? onText, int maxSentences)
         {
             if (!available) return null;
 
+            string text = "";
             try
             {
-                ChatRequest request = new ChatRequest(model, messages, false, new ChatOptions(0.6));
+                // stream = true: Ollama skickar svaret bit för bit, en JSON-rad per bit.
+                ChatRequest request = new ChatRequest(Model, messages, true, new ChatOptions(0.6));
+                HttpRequestMessage httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
+                {
+                    Content = JsonContent.Create(request)
+                };
+
                 // AI-anropet görs asynkront, men spelloopen är synkron, därför väntar vi in svaret här.
-                HttpResponseMessage response = http.PostAsJsonAsync("/api/chat", request).GetAwaiter().GetResult();
+                // ResponseHeadersRead = börja läsa direkt, vänta inte på hela svaret.
+                using HttpResponseMessage response = http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
                 response.EnsureSuccessStatusCode();
 
-                ChatResponse? result = response.Content.ReadFromJsonAsync<ChatResponse>().GetAwaiter().GetResult();
-                string? text = result?.Message?.Content?.Trim();
-                return string.IsNullOrWhiteSpace(text) ? null : text;
+                using StreamReader reader = new StreamReader(response.Content.ReadAsStream());
+                int sentences = 0;
+                char lastChar = ' ';
+                string? line;
+
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (line == "") continue;
+                    ChatResponse? part = JsonSerializer.Deserialize<ChatResponse>(line);
+                    string piece = part?.Message?.Content ?? "";
+
+                    // Klipp efter maxSentences meningar. "..." räknas som ett meningsslut, inte tre.
+                    for (int i = 0; i < piece.Length; i++)
+                    {
+                        bool isEnd = piece[i] == '.' || piece[i] == '!' || piece[i] == '?';
+                        bool prevIsEnd = lastChar == '.' || lastChar == '!' || lastChar == '?';
+                        lastChar = piece[i];
+
+                        if (isEnd && !prevIsEnd)
+                        {
+                            sentences++;
+                            if (sentences == maxSentences)
+                            {
+                                piece = piece.Substring(0, i + 1);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Ta bort mellanslag och radbrytningar i början av svaret
+                    if (text == "") piece = piece.TrimStart();
+
+                    text += piece;
+                    if (piece != "") onText?.Invoke(piece);
+
+                    if (sentences >= maxSentences || part?.Done == true) break; // Att sluta läsa avbryter AI:n
+                }
             }
-            catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException)
+            catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException || ex is IOException)
             {
                 // Ollama är inte igång eller svarar för långsamt. Spelet fortsätter med de fasta texterna.
-                available = false;
-                Console.WriteLine("(Spelledaren sover. Fortsätter utan AI.)");
-                return null;
+                // Har en del av svaret redan kommit används den.
+                if (text == "")
+                {
+                    available = false;
+                    Console.WriteLine("(Spelledaren sover. Fortsätter utan AI.)");
+                    return null;
+                }
             }
+
+            text = text.Trim();
+            return text == "" ? null : text;
         }
 
         // Format som Ollamas /api/chat förväntar sig
@@ -135,6 +177,7 @@ namespace DungeonCrawler_Spel
             [property: JsonPropertyName("options")] ChatOptions Options);
 
         private record ChatResponse(
-            [property: JsonPropertyName("message")] ChatMessage? Message);
+            [property: JsonPropertyName("message")] ChatMessage? Message,
+            [property: JsonPropertyName("done")] bool Done);
     }
 }
