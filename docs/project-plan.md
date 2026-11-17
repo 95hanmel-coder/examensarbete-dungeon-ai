@@ -57,4 +57,4 @@ Loggboken skriver jag varje vecka i `docs/`, i Obsidian.
 
 | Datum | Vad jag ändrade | Varför |
 |---|---|---|
-| | | |
+| 2026-11-17 | Spelet körs på .NET 10 i stället för .NET 9 | Datorn har bara .NET 8 och 10 installerat, och .NET 10 har längre support (LTS) |
