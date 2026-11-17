@@ -13,8 +13,8 @@ Examensarbete av Hanita Melin. Projektplanen finns i [docs/project-plan.md](docs
 ### Det här behöver du
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/), som ska vara igång
-- Cirka 4 GB ledigt diskutrymme för AI-modellen
-- En dator med minst 8 GB RAM
+- Cirka 6 GB ledigt diskutrymme för AI-modellen
+- En dator med minst 16 GB RAM (med 8 GB, använd den mindre modellen, se *Inställningar*)
 
 ### Starta spelet
 
@@ -25,9 +25,9 @@ Examensarbete av Hanita Melin. Projektplanen finns i [docs/project-plan.md](docs
    ```
 2. Öppna PowerShell eller en terminal i mappen och skriv:
    ```
-   docker compose run --rm game
+   docker compose run --build --rm game
    ```
-   Första gången tar det några minuter, eftersom AI-modellen (cirka 2 GB) laddas ner. Efter det startar spelet på några sekunder.
+   Första gången tar det några minuter, eftersom AI-modellen (cirka 3,4 GB) laddas ner. Efter det startar spelet på några sekunder.
 
 3. När du har spelat klart kan du stänga av AI-tjänsten:
    ```
@@ -56,8 +56,8 @@ Examensarbete av Hanita Melin. Projektplanen finns i [docs/project-plan.md](docs
 |---|---|
 | `docker: command not found` eller `cannot connect to the Docker daemon` | Starta Docker Desktop och vänta tills den säger att den är igång |
 | Spelet skriver "(Spelledaren sover. Fortsätter utan AI.)" | AI:n svarade inte. Spelet fungerar ändå, med enklare texter. Kontrollera att Docker Desktop är igång och starta om spelet |
-| Det första svaret tar lång tid | Helt normalt. AI-modellen laddas in i minnet första gången, det tar cirka 10 sekunder |
-| AI:n skriver konstig svenska | Modellen är liten för att kunna köras på en vanlig dator. Se *Begränsningar* nedan |
+| Det första svaret tar lång tid | Helt normalt. AI-modellen laddas in i minnet första gången, det tar cirka 15 sekunder |
+| Det tar lång tid innan texten börjar synas | Datorn är långsam eller går på batteri. Sätt i laddaren, eller byt till den snabbare modellen: `$env:OLLAMA_MODEL = "llama3.2:3b"` innan du startar spelet |
 
 ---
 
@@ -67,14 +67,16 @@ Examensarbete av Hanita Melin. Projektplanen finns i [docs/project-plan.md](docs
 
 ```
 ┌──────────────┐   HTTP POST /api/chat (JSON)   ┌──────────────┐      ┌──────────────┐
-│  Spelet (C#) │ ─────────────────────────────► │    Ollama    │ ───► │ llama3.2:3b  │
-│  container   │ ◄───────────────────────────── │  container   │      │ (AI-modell)  │
-└──────────────┘          svar (JSON)           └──────────────┘      └──────────────┘
+│  Spelet (C#) │ ─────────────────────────────► │    Ollama    │ ───► │  gemma3:4b   │
+│  container   │ ◄──────── svar ord för ord ─── │  container   │      │ (AI-modell)  │
+└──────────────┘     (streaming, JSON-rader)    └──────────────┘      └──────────────┘
 ```
 
 - **Spelets regler bestäms av C#-koden:** rum, utgångar, föremål och vinstvillkor. AI:n skriver bara text och kan inte ändra vad som händer i spelet.
-- **Reservläge:** om Ollama inte svarar inom 30 sekunder, eller inte är igång, visar spelet de fasta texterna och slutar fråga AI:n.
-- AI-svaren för rummen klipps efter två meningar i koden, eftersom modellen ofta skriver längre än den blir ombedd.
+- **Streaming:** Ollama skickar svaret bit för bit, och spelet visar texten medan den skrivs, så att väntan känns kortare.
+- **Reservläge:** om Ollama inte är igång, eller inte har svarat färdigt inom 60 sekunder, visar spelet de fasta texterna och slutar fråga AI:n.
+- AI-svaren för rummen klipps efter två meningar i koden, eftersom modellen ofta skriver längre än den blir ombedd. Spelet slutar då läsa, vilket också avbryter AI:n och sparar tid.
+- **Figurerna** (Merlin, Nimue, Draken) minns vad som sagts under samtalet och vet vad Tristan bär på.
 
 ### Projektstruktur
 
@@ -82,13 +84,15 @@ Examensarbete av Hanita Melin. Projektplanen finns i [docs/project-plan.md](docs
 examensarbete-dungeon-ai/
 ├── docker-compose.yml        # Startar Ollama, laddar ner modellen och kör spelet
 ├── docs/
-│   └── project-plan.md       # Projektplan
+│   ├── project-plan.md       # Projektplan
+│   ├── loggbok.md            # Loggbok, vecka för vecka
+│   └── model-comparison.md   # Mätning och jämförelse av AI-modeller
 └── src/DungeonCrawler/
     ├── Dockerfile            # Bygger spelet till en container
     ├── Program.cs            # Startpunkt
     ├── Game.cs               # Spelloop, kommandon, kartan
     ├── AiGameMaster.cs       # Pratar med Ollama: rumsbeskrivningar och samtal
-    ├── Character.cs          # Figur som AI:n spelar (Merlin, Nimue)
+    ├── Character.cs          # Figur som AI:n spelar (Merlin, Nimue, Draken)
     ├── Room.cs               # Rum med föremål, figurer och utgångar
     ├── Player.cs             # Spelaren och inventory
     └── Item.cs               # Föremål
@@ -107,44 +111,55 @@ dotnet run
 
 ### Inställningar
 
-Sätts som miljövariabler, till exempel i PowerShell: `$env:OLLAMA_MODEL = "llama3.2:1b"`
+Sätts som miljövariabler, till exempel i PowerShell: `$env:OLLAMA_MODEL = "llama3.2:3b"`
 
 | Variabel | Standardvärde | Vad den gör |
 |---|---|---|
 | `OLLAMA_URL` | `http://localhost:11434` (i Docker: `http://ollama:11434`) | Adress till Ollama |
-| `OLLAMA_MODEL` | `llama3.2:3b` | Vilken AI-modell som används |
+| `OLLAMA_MODEL` | `gemma3:4b` | Vilken AI-modell som används |
 
-Byta modell för hela lösningen: `$env:OLLAMA_MODEL = "llama3.2:1b"; docker compose run --rm game`
+Byta till den snabbare modellen för hela lösningen: `$env:OLLAMA_MODEL = "llama3.2:3b"; docker compose run --build --rm game`
+
+### Mäta AI-modellerna
+
+```
+cd src/DungeonCrawler
+dotnet run -- --benchmark gemma3:4b llama3.2:3b
+```
+
+Varje modell beskriver alla rum och svarar Merlin på en fråga. Resultatet skrivs som Markdown, med tid till första ordet och total tid. Modellerna måste vara nedladdade först, till exempel `docker exec ollama ollama pull llama3.2:3b`. Senaste mätningen finns i [docs/model-comparison.md](docs/model-comparison.md).
 
 ### Lägga till en ny figur
 
 I `Game.cs`, metoden `CreateWorld()`:
 
 ```csharp
-dragonCave.Characters.Add(new Character("Draken",
-    "Du är en gammal, trött drake. Du pratar långsamt och vill bara sova."));
+throneRoom.Characters.Add(new Character("Galahad",
+    "Du är riddaren Galahad, ung, ärlig och lite högtidlig. Du har tappat din medaljong."));
 ```
 
 Texten är instruktionen till AI:n: vem figuren är, hur den pratar och vad den vet.
 
 ### Begränsningar
 
-Uppmätt på min egen dator:
+Uppmätt på en bärbar dator utan grafikkort (Intel Core i5, 32 GB RAM). Fem modeller testades, se [docs/model-comparison.md](docs/model-comparison.md):
 
-| Modell | Storlek | Svarstid | Svenska |
+| Modell | Storlek | Tid till första ordet | Svenska |
 |---|---|---|---|
-| `llama3.2:1b` | 1,3 GB | ca 4 s | Blandar in engelska ord och hittar på ord |
-| `llama3.2:3b` (standard) | 2 GB | ca 3 s, ca 11 s första gången | Bättre, men ibland konstiga ord |
+| `gemma3:4b` (standard) | 3,4 GB | ca 6,5 s med laddare, ca 13 s på batteri | Klart bäst, naturlig och korrekt |
+| `llama3.2:3b` | 2 GB | ca 2,5 s | Okej, men konstiga ord ibland |
 
+- **Språk mot hastighet:** den modell som skriver bäst svenska är också två till fem gånger långsammare. På en dator med grafikkort skulle den vara mycket snabbare.
 - AI:n kan hitta på detaljer som inte finns i spelet (så kallade *hallucinationer*). Därför bestämmer koden vilka föremål och utgångar som finns, och de visas alltid av koden, inte av AI:n.
 - Svaren blir lite olika varje gång.
 
 ### Vidareutveckling
 
-- Testa större eller mer svenskspråkiga modeller och jämföra kvalitet mot svarstid
-- Visa AI:ns svar ord för ord medan det skrivs (streaming), så att väntan känns kortare
-- Låta figurerna minnas vad Tristan bär på, så att Merlin kan kommentera trollstaven
-- Fler figurer, till exempel draken i Drakgrottan
+- Hämta nästa rums beskrivning i förväg medan spelaren läser, så att väntan försvinner helt
+- Låta spelet välja modell automatiskt efter hur snabb datorn är
+- Låta figurerna minnas tidigare samtal, även efter att man gått därifrån
+- Fler figurer, till exempel Galahad i Tronsalen
+- Automatiska tester av spelreglerna (rörelse, föremål, vinst) som körs utan AI:n
 
 ---
 

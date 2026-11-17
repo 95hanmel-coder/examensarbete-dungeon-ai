@@ -38,13 +38,9 @@ namespace DungeonCrawler_Spel
         {
             // Adress och modell kan ändras med miljövariabler, annars används standardvärden.
             string url = Environment.GetEnvironmentVariable("OLLAMA_URL") ?? "http://localhost:11434";
-            Model = model ?? Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "llama3.2:3b";
+            Model = model ?? Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "gemma3:4b";
 
-            http = new HttpClient
-            {
-                BaseAddress = new Uri(url),
-                Timeout = TimeSpan.FromSeconds(60) // Tidsgräns, så spelet inte fastnar
-            };
+            http = new HttpClient { BaseAddress = new Uri(url) };
         }
 
         // Skriver en AI-beskrivning av rummet. onText får texten bit för bit, så den kan visas medan AI:n skriver.
@@ -94,6 +90,9 @@ namespace DungeonCrawler_Spel
             if (!available) return null;
 
             string text = "";
+            // Tidsgräns för hela svaret, även när det kommer bit för bit, så spelet inte fastnar.
+            // (HttpClient.Timeout räcker inte: den slutar gälla när svaret har börjat komma.)
+            using CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             try
             {
                 // stream = true: Ollama skickar svaret bit för bit, en JSON-rad per bit.
@@ -105,7 +104,7 @@ namespace DungeonCrawler_Spel
 
                 // AI-anropet görs asynkront, men spelloopen är synkron, därför väntar vi in svaret här.
                 // ResponseHeadersRead = börja läsa direkt, vänta inte på hela svaret.
-                using HttpResponseMessage response = http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
+                using HttpResponseMessage response = http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, timeout.Token).GetAwaiter().GetResult();
                 response.EnsureSuccessStatusCode();
 
                 using StreamReader reader = new StreamReader(response.Content.ReadAsStream());
@@ -113,7 +112,7 @@ namespace DungeonCrawler_Spel
                 char lastChar = ' ';
                 string? line;
 
-                while ((line = reader.ReadLine()) != null)
+                while ((line = reader.ReadLineAsync(timeout.Token).AsTask().GetAwaiter().GetResult()) != null)
                 {
                     if (line == "") continue;
                     ChatResponse? part = JsonSerializer.Deserialize<ChatResponse>(line);
@@ -146,7 +145,7 @@ namespace DungeonCrawler_Spel
                     if (sentences >= maxSentences || part?.Done == true) break; // Att sluta läsa avbryter AI:n
                 }
             }
-            catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException || ex is IOException)
+            catch (Exception ex) when (ex is HttpRequestException || ex is OperationCanceledException || ex is IOException)
             {
                 // Ollama är inte igång eller svarar för långsamt. Spelet fortsätter med de fasta texterna.
                 // Har en del av svaret redan kommit används den.
