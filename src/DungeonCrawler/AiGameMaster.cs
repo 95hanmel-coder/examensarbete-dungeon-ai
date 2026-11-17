@@ -20,10 +20,11 @@ namespace DungeonCrawler_Spel
             "- Beskriv bara vad Tristan ser, hör och känner när han kommer in i rummet.\n" +
             "- Nämn bara föremål som finns i listan. Hitta inte på personer, föremål eller utgångar.\n" +
             "- Tristan har inte gjort något i rummet än. Skriv inte att han tar eller använder något.\n\n" +
+            // Exemplet är ett påhittat rum som inte finns i spelet, annars kopierar AI:n detaljer därifrån.
             "Exempel:\n" +
-            "Rum: Kapellet. Grundbeskrivning: Heligt rum med altare och statyer. Föremål: Fackla\n" +
-            "Svar: Du kliver in i det tysta kapellet, där stenstatyer vakar över ett gammalt altare. " +
-            "En fackla fladdrar i väggen och kastar långa skuggor över golvet.";
+            "Rum: Vaktstugan. Grundbeskrivning: Litet rum med en brasa. Föremål: Kniv\n" +
+            "Svar: Du kliver in i den lilla vaktstugan, där en brasa sprakar i hörnet. " +
+            "På bordet ligger en kniv och glimmar i eldskenet.";
 
         public AiGameMaster()
         {
@@ -51,7 +52,23 @@ namespace DungeonCrawler_Spel
                 new ChatMessage("user", $"Rum: {room.Name}. Grundbeskrivning: {room.Description} Föremål: {items}")
             };
 
-            return Ask(messages);
+            string? text = Ask(messages);
+            return text == null ? null : KeepSentences(text, 2);
+        }
+
+        // AI:n skriver ofta fler meningar än vi ber om, så vi klipper efter ett visst antal.
+        private static string KeepSentences(string text, int max)
+        {
+            int count = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (text[i] == '.' || text[i] == '!' || text[i] == '?')
+                {
+                    count++;
+                    if (count == max) return text.Substring(0, i + 1);
+                }
+            }
+            return text;
         }
 
         // Startar ett samtal med en figur. Listan sparar allt som sagts, så figuren minns samtalet.

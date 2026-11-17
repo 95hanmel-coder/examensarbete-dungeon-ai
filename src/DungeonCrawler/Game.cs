@@ -225,6 +225,12 @@
             // AI hjälp. Hitta objektet i rummets lista baserat på namn (case-insensitive) med lambda. Ist för foreach. 
             Item itemToTake = player.CurrentRoom.ItemsInRoom.Find(item => item.Name.ToLower() == itemName.ToLower());
 
+            // Räcker att skriva början av namnet, t.ex. "ta brev" för "Brev med sigill"
+            if (itemToTake == null && itemName != "")
+            {
+                itemToTake = player.CurrentRoom.ItemsInRoom.Find(item => item.Name.ToLower().StartsWith(itemName.ToLower()));
+            }
+
             // Specialobjekt som inte kan tas
             if (itemToTake != null)
             {
