@@ -150,6 +150,13 @@
             string verb = parts[0];
             string noun = parts.Length > 1 ? parts[1] : ""; // Kan vara föremål eller riktning
 
+            // Bara en riktning, t.ex. "syd", räcker också för att gå
+            if (NormalizeDirection(verb) != null)
+            {
+                MovePlayer(verb);
+                return;
+            }
+
             switch (verb)
             {
                 case "gå": MovePlayer(noun); break;
@@ -171,6 +178,14 @@
                 return;
             }
 
+            string? normalized = NormalizeDirection(direction);
+            if (normalized == null)
+            {
+                Console.WriteLine("Vart vill du gå? Skriv till exempel 'gå norr' eller bara 'norr'.");
+                return;
+            }
+            direction = normalized;
+
             if (!player.CurrentRoom.Exits.TryGetValue(direction, out Room nextRoom))
             {
                 Console.WriteLine("Du försöker gå genom väggen. Tyvärr, Tristan är inte en spökfigur… än.");
@@ -180,6 +195,19 @@
             player.MoveToRoom(nextRoom);
             Console.WriteLine($"Du går {direction} och kommer till {player.CurrentRoom.Name}.");
             DescribeCurrentRoom();
+        }
+
+        // Gör om olika sätt att skriva en riktning till det namn rummen använder. null = ingen riktning.
+        private static string? NormalizeDirection(string word)
+        {
+            switch (word.Trim())
+            {
+                case "norr": case "nord": case "n": return "norr";
+                case "syd": case "söder": case "s": return "syd";
+                case "öst": case "öster": case "ö": return "öst";
+                case "väst": case "väster": case "v": return "väst";
+                default: return null;
+            }
         }
 
         // Ber AI-spelledaren beskriva rummet. Svarar den inte visas den fasta texten.
@@ -259,7 +287,7 @@
         private void ShowHelp()
         {
             Console.WriteLine("Tillgängliga kommandon:");
-            Console.WriteLine(" gå [riktning] - rör dig i en riktning (norr, syd, öster, väster)");
+            Console.WriteLine(" gå [riktning] - rör dig i en riktning (norr, syd, öst, väst). Det räcker att skriva bara riktningen, t.ex. 'syd'");
             Console.WriteLine(" titta - beskriver rummet igen");
             Console.WriteLine(" ta [föremål] - tar ett föremål från rummet");
             Console.WriteLine(" inventory - visar föremålen du bär på");
