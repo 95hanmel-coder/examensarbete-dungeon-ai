@@ -106,6 +106,17 @@
             nimueChamber.Exits.Add("syd", merlinsTower);
 
 
+            // Figurer som AI-spelledaren spelar
+            merlinsTower.Characters.Add(new Character("Merlin",
+                "Du är trollkarlen Merlin, gammal, vis och lite lurig. Du talar gåtfullt. " +
+                "Du vet att Heliga Graalen finns i Avalons Trädgård, norr om Camelots Borggård, " +
+                "och att den ska bäras till Kapellet. Säg det aldrig rakt ut, ge bara ledtrådar."));
+            nimueChamber.Characters.Add(new Character("Nimue",
+                "Du är Nimue, Sjöns Dam, som en gång gav kung Arthur svärdet Excalibur. " +
+                "Du är vänlig men hemlighetsfull och talar om speglar, vatten och öden. " +
+                "Du vet inte var Graalen finns, men du tycker att Tristan ska fråga Merlin."));
+
+
             Item excalibur = new Item("Excalibur", "");
             Item potion = new Item("Trolldryck", "");
             Item merlinsStaff = new Item("Trollstav", "En knotig stav med inristade runor, fylld av gammal magi 🔮");
@@ -145,6 +156,7 @@
                 case "titta": Console.WriteLine(player.CurrentRoom.GetDescription()); break;
                 case "ta": TakeItemFromRoom(noun); break;
                 case "inventory": Console.WriteLine(player.GetInventoryDescription()); break;
+                case "prata": TalkTo(noun); break;
                 case "hjälp": ShowHelp(); break;
                 case "avsluta": gameOver = true; Console.WriteLine("Avslutar spelet..."); break;
                 default: Console.WriteLine("Förstår inte kommandot. Skriv 'hjälp' för en lista över kommandon."); break;
@@ -209,6 +221,41 @@
             }
         }
 
+        private void TalkTo(string text)
+        {
+            // "prata med merlin" -> noun blir "med merlin", ta bort "med"
+            string name = text.StartsWith("med ") ? text.Substring(4) : text;
+            Character? character = player.CurrentRoom.Characters.Find(x => x.Name.ToLower() == name.Trim());
+
+            if (character == null)
+            {
+                Console.WriteLine("Här finns ingen med det namnet. Tristan pratar med väggen, men väggen svarar inte.");
+                return;
+            }
+
+            List<AiGameMaster.ChatMessage> conversation = gameMaster.StartConversation(character);
+            Console.WriteLine($"Du pratar med {character.Name}. Skriv 'hejdå' för att sluta prata.\n");
+
+            while (true)
+            {
+                Console.Write("Tristan: ");
+                string said = Console.ReadLine()?.Trim() ?? "hejdå"; // null = inmatningen tog slut
+                if (said.ToLower() == "hejdå" || said == "") break;
+
+                Console.WriteLine("(" + character.Name + " funderar...)");
+                string? answer = gameMaster.Talk(conversation, said);
+
+                if (answer == null)
+                {
+                    Console.WriteLine($"{character.Name} ser fundersam ut men säger ingenting.");
+                    break;
+                }
+                Console.WriteLine($"{character.Name}: {answer}\n");
+            }
+
+            Console.WriteLine($"Du lämnar {character.Name} och ser dig omkring i rummet igen.");
+        }
+
         private void ShowHelp()
         {
             Console.WriteLine("Tillgängliga kommandon:");
@@ -216,6 +263,7 @@
             Console.WriteLine(" titta - beskriver rummet igen");
             Console.WriteLine(" ta [föremål] - tar ett föremål från rummet");
             Console.WriteLine(" inventory - visar föremålen du bär på");
+            Console.WriteLine(" prata med [namn] - pratar med en figur i rummet");
             Console.WriteLine(" hjälp - visar denna lista");
             Console.WriteLine(" avsluta - avslutar spelet");
         }

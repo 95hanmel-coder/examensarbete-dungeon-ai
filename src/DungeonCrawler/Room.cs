@@ -8,7 +8,7 @@ namespace DungeonCrawler_Spel
 
         public string Description { get; set; }
         public List<Item> ItemsInRoom { get; set; }
-
+        public List<Character> Characters { get; set; }
 
         // Mappar riktningar, vilka rum som är sammankopplade
         public Dictionary<string, Room> Exits { get; set; }
@@ -19,6 +19,7 @@ namespace DungeonCrawler_Spel
             Name = name;
             Description = description;
             ItemsInRoom = new List<Item>();
+            Characters = new List<Character>();
             Exits = new Dictionary<string, Room>();
         }
 
@@ -29,6 +30,12 @@ namespace DungeonCrawler_Spel
             StringBuilder sb = new StringBuilder();
             // Lägg till information om föremål i rummet.
             sb.AppendLine(aiDescription ?? Description);
+
+            // Figurer man kan prata med
+            if (Characters.Count > 0)
+            {
+                sb.AppendLine("Här finns: " + string.Join(", ", Characters.Select(x => x.Name)) + ". (Skriv 'prata med [namn]')");
+            }
 
             // Om det finns föremål...
             if (ItemsInRoom.Count > 0)
